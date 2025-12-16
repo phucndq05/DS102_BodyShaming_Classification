@@ -1,0 +1,25 @@
+# System & Environment
+__pycache__/
+*.pyc
+.DS_Store
+.env
+venv/
+env/
+.ipynb_checkpoints/
+
+# Data Files
+data/raw/*
+data/processed/*
+data/dictionaries/*
+!data/raw/.gitkeep
+
+# Model Artifacts
+*.pkl
+*.pt
+*.pth
+*.h5
+demo/artifacts/*
+
+# IDE Configuration
+.idea/
+.vscode/
