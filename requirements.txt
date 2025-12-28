@@ -1,5 +1,9 @@
 pandas
+numpy
 scikit-learn
+seaborn
+matplotlib
+emoji
+pyvi
 streamlit
 transformers
-pyvi

@@ -1,28 +1,33 @@
-# [GHI CHÚ DÀNH CHO NHÓM PHÁT TRIỂN]
-# -----------------------------------
-# Mã nguồn ứng dụng Demo sử dụng thư viện Streamlit.
-# Giao diện và chức năng có thể được mở rộng tùy theo yêu cầu báo cáo.
 
 import streamlit as st
+# import joblib
+# from src.preprocessing import DataPreprocessor
+
+def load_model(model_path):
+    """
+    Hàm load model từ file artifact.
+    """
+    pass
+
+def predict(text):
+    """
+    Hàm dự đoán nhãn cho 1 câu text.
+    """
+    pass
 
 def main():
-    st.set_page_config(page_title="DS102 Demo", page_icon="🛡️")
+    st.title("🛡️ Demo Body Shaming Detection")
+    st.write("Hệ thống phân loại bình luận tiếng Việt.")
     
-    st.title("🛡️ Demo Phân loại Body Shaming")
-    st.markdown("Vui lòng nhập nội dung bình luận cần kiểm tra vào ô bên dưới:")
+    # --- Sidebar: Model Selection ---
+    # option = st.sidebar.selectbox("Chọn mô hình:", ["SVM", "Naive Bayes"])
     
-    user_input = st.text_area("Nội dung bình luận:", height=100)
+    # --- Main Interface ---
+    # text_input = st.text_area("Nhập bình luận:")
     
-    if st.button("Phân tích", type="primary"):
-        if not user_input:
-            st.warning("Vui lòng nhập nội dung trước khi kiểm tra.")
-        else:
-            st.info("Đang xử lý dữ liệu... ([TODO]: Kết nối Mô hình)")
-            # [TODO]: Gọi hàm dự đoán từ mô hình đã huấn luyện
-            # result = model.predict(user_input)
-            
-            # Hiển thị kết quả giả lập
-            st.success("Kết quả dự đoán: ...")
+    # if st.button("Kiểm tra"):
+    #     result = predict(text_input)
+    #     st.write(f"Kết quả: {result}")
 
 if __name__ == "__main__":
     main()

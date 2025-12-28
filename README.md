@@ -12,7 +12,7 @@ Dự án được tổ chức theo tiêu chuẩn Khoa học Dữ liệu (Data Sc
 
 | Thư mục | Mô tả chức năng |
 | :--- | :--- |
-| **data/** | Kho lưu trữ dữ liệu. \`raw\`: Dữ liệu thô gốc. \`processed\`: Dữ liệu đã làm sạch. |
+| **data/** | Kho lưu trữ dữ liệu. <br> - `raw`: Dữ liệu thô gốc. <br> - `processed`: Dữ liệu đã làm sạch. <br> - `dictionaries`: Từ điển Teencode/Stopwords. |
 | **src/** | Mã nguồn chính (Source Code). Chứa các lớp xử lý dữ liệu và huấn luyện mô hình. |
 | **notebooks/** | Các tệp Jupyter Notebook dùng cho phân tích khám phá (EDA) và thử nghiệm. |
 | **demo/** | Mã nguồn ứng dụng Web Demo (sử dụng thư viện Streamlit). |
