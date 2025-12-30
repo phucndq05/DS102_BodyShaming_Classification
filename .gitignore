@@ -8,17 +8,18 @@ env/
 .ipynb_checkpoints/
 
 # Data Files
-data/raw/*
-data/processed/*
-data/dictionaries/*
-!data/raw/.gitkeep
+# data/raw/*
+# data/processed/*
+# data/dictionaries/*
+# !data/raw/.gitkeep
 
 # Model Artifacts
 *.pkl
 *.pt
 *.pth
 *.h5
-demo/artifacts/*
+# demo/artifacts/*
+demo/artifacts/phobert_final/model.safetensors
 
 # IDE Configuration
 .idea/
