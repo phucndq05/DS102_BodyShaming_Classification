@@ -1,0 +1,6 @@
+[theme]
+primaryColor = "#4CAF50"  # Màu xanh lá "uy tín" (Google Material Green)
+backgroundColor = "#FFFFFF" # Nền trắng tinh khôi
+secondaryBackgroundColor = "#E8F5E9" # Nền phụ màu xanh lá cực nhạt (cho Sidebar)
+textColor = "#262730" # Chữ màu đen xám dễ đọc
+font = "sans serif" 
