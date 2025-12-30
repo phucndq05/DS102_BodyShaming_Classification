@@ -38,12 +38,21 @@ def get_potential_teencode(data_path, text_col='comment', output_path='teencode_
     print("-> Đang xử lý và tách từ...")
     # 3. Duyệt qua từng dòng dữ liệu
     for text in df[text_col].dropna():
-        # Bước A: Làm sạch cơ bản (xóa HTML, URL...) nhưng KHÔNG thay thế teencode
-        # Chúng ta cần nhìn thấy teencode gốc
-        clean_text = preprocessor.clean_text(text)
-        
-        # Bước B: Chuẩn hóa Unicode và Lowercase
-        clean_text = preprocessor.normalize(clean_text)
+        # Fix: Tự làm sạch tại chỗ để KHÔNG bị dính Emoji
+
+        # 1. Chuyển về chữ thường & ép kiểu string
+        text = str(text).lower()
+
+        # 2. Xóa HTML & URL (Copy logic của clean_text nhưng viết thẳng vào đây)
+        text = re.sub(r'<[^>]*>', ' ', text)
+        text = re.sub(r'http\S+|www\.\S+', '', text)
+
+        # 3. Chuẩn hóa Unicode (để máy tính đọc đúng tiếng Việt)
+        import unicodedata
+        clean_text = unicodedata.normalize('NFC', text)
+
+        # LƯU Ý: Tuyệt đối KHÔNG gọi preprocessor.normalize() ở đây nữa!
+        # -------------------------------------------------------
         
         # Bước C: Tách từ đơn giản bằng khoảng trắng (không dùng PyVi ở đây vì PyVi có thể gộp sai teencode)
         tokens = clean_text.split()
