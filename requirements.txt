@@ -6,4 +6,5 @@ matplotlib
 emoji
 pyvi
 streamlit
-transformers
+transformerstorch
+accelerate

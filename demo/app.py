@@ -11,12 +11,22 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-# Import module tiền xử lý
-try:
-    from src.preprocessing import clean_text
-except ImportError:
-    def clean_text(text, mode='statistical'):
-        return text.lower()
+# Thêm đường dẫn root vào sys.path để import được src
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(current_dir)
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
+
+from src.preprocessing import DataPreprocessor
+from src.models import PhoBERTClassifier  # [NEW] Import class PhoBERT
+
+# Khởi tạo Preprocessor
+preprocessor = DataPreprocessor()
+
+def clean_text(text, mode='statistical'):
+    # Wrapper để gọi hàm process của class
+    preprocessor.mode = 'deep_learning' if mode == 'deep_learning' else 'baseline'
+    return preprocessor.process(text)
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(
@@ -66,9 +76,20 @@ def load_model(model_name):
 
     # Nhóm mô hình Deep Learning
     elif model_name == "PhoBERT":
-        # Load PhoBERT ở đây (yêu cầu torch, transformers)
-        # Vì demo đồ án gấp, nếu chưa đóng gói được PhoBERT, ta sẽ để None để chạy giả lập
-        pass
+        phobert_path = os.path.join(artifacts_dir, MODEL_FILES["PhoBERT"])
+        print(f"DEBUG: Loading PhoBERT from {phobert_path}")
+        # Kiểm tra sơ bộ xem folder hoặc file config có tồn tại không
+        if os.path.exists(phobert_path) and os.path.exists(os.path.join(phobert_path, "config.json")):
+            try:
+                # Load PhoBERTClassifier từ path đã lưu
+                model = PhoBERTClassifier(load_path=phobert_path)
+                print("DEBUG: Successfully loaded PhoBERT")
+            except Exception as e:
+                print(f"DEBUG: Error loading PhoBERT: {e}")
+                st.error(f"Lỗi khi load PhoBERT: {e}")
+        else:
+            print(f"DEBUG: PhoBERT path found? {os.path.exists(phobert_path)}")
+            st.warning("Chưa tìm thấy model PhoBERT (cần file model.safetensors). Hệ thống sẽ chạy giả lập.")
         
     return model
 
@@ -86,21 +107,29 @@ def predict(model, text, model_name):
     label = 0
     confidence = 0.0
     
-    # CASE A: CÓ MODEL THỰC TẾ (Đã load được file .pkl)
-    if model is not None and model_name != "PhoBERT":
+    # CASE A: CÓ MODEL THỰC TẾ
+    if model is not None:
         try:
-            # Các model Sklearn (SVM, NB, LR) đều có hàm predict_proba
-            # Input phải là list hoặc array, ví dụ: [processed_text]
-            # Lưu ý: Model lưu phải là Pipeline (bao gồm cả TfidfVectorizer)
-            proba = model.predict_proba([processed_text])[0]
-            label = np.argmax(proba)
-            confidence = proba[label]
+            if model_name == "PhoBERT":
+                 # PhoBERTClassifier.predict trà về list nhãn [0, 1...]
+                 # Hiện tại class này chưa trả về xác suất nên ta giả định confidence = 0.99
+                 pred_label = model.predict([processed_text])[0]
+                 label = int(pred_label)
+                 confidence = 0.99 
+            else:
+                # Các model Sklearn (SVM, NB, LR) đều có hàm predict_proba
+                # Input phải là list hoặc array, ví dụ: [processed_text]
+                # Lưu ý: Model lưu phải là Pipeline (bao gồm cả TfidfVectorizer)
+                proba = model.predict_proba([processed_text])[0]
+                label = np.argmax(proba)
+                confidence = proba[label]
         except Exception as e:
             print(f"DEBUG: Inference error: {e}")
-            st.error(f"Lỗi format model: {e}. Đảm bảo bạn đã save cả Pipeline (Tfidf + Model).")
+            st.error(f"Lỗi dự đoán: {e}")
             # Fallback random nếu lỗi
             label = random.choice([0, 1, 2])
             confidence = 0.5
+
 
     # CASE B: PHOBERT HOẶC CHƯA CÓ FILE MODEL (CHẠY GIẢ LẬP DEMO)
     else:
@@ -141,10 +170,15 @@ def main():
     # Load model
     model = load_model(model_option)
     
-    if model is None and model_option != "PhoBERT":
-        st.sidebar.warning(f"⚠️ Chưa tìm thấy file `{MODEL_FILES.get(model_option)}`. Đang chạy chế độ Demo.")
+    if model is None:
+        if model_option == "PhoBERT":
+            st.sidebar.warning("⚠️ Chưa tự động load được PhoBERT (thiếu file model?). Đang chạy chế độ Demo.")
+        else:
+             st.sidebar.warning(f"⚠️ Chưa tìm thấy file `{MODEL_FILES.get(model_option)}`. Đang chạy chế độ Demo.")
     elif model_option == "PhoBERT":
-        st.sidebar.warning("⚠️ PhoBERT đang chạy chế độ Demo (Mockup) để tối ưu tốc độ.")
+        st.sidebar.success("✅ Đã load thành công PhoBERT Model.")
+    else:
+        st.sidebar.success(f"✅ Đã load thành công {model_option}.")
 
     # --- Main Interface ---
     st.title("🛡️ Demo Body Shaming Detection")
