@@ -1,174 +1,155 @@
-
 import streamlit as st
 import joblib
 import os
 import sys
 import numpy as np
-import random
+import torch
+import re
+import emoji
+from pyvi import ViTokenizer
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
-# --- CẤU HÌNH ĐƯỜNG DẪN (PATH CONFIG) ---
+# --- 1. CẤU HÌNH HỆ THỐNG ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-# Import module tiền xử lý
-try:
-    from src.preprocessing import clean_text
-except ImportError:
-    def clean_text(text, mode='statistical'):
-        return text.lower()
+st.set_page_config(page_title="Body Shaming Detection", page_icon="🛡️", layout="centered")
 
-# --- CẤU HÌNH TRANG ---
-st.set_page_config(
-    page_title="Body Shaming Detection",
-    page_icon="🛡️",
-    layout="centered"
-)
+# --- 2. HÀM XỬ LÝ TEXT (Giữ nguyên logic chuẩn) ---
+def local_clean_text(text, mode='statistical'):
+    if not isinstance(text, str): return ""
+    
+    text = text.lower()
+    text = emoji.demojize(text, delimiters=(' ', ' '))
+    text = text.replace(':', '').replace('_', ' ')
+    
+    text = re.sub(r'<[^>]*>', ' ', text)
+    text = re.sub(r'http\S+|www\.\S+', '', text)
+    text = re.sub(r'@[a-zA-Z0-9_.]+', '', text)
+    text = re.sub(r'#\S+', '', text)
+    text = re.sub(r'[\n\t]', ' ', text)
+    
+    text = re.sub(r'(\d+)\s*kg\b', r'\1 kilogram', text)
+    text = re.sub(r'\bkg\b', 'không', text)
+    text = re.sub(r'(.)\1{2,}', r'\1', text)
+    
+    text = re.sub(r'\.{3,}', ' ... ', text)
+    text = re.sub(r'[,\-*~()"]', ' ', text)
+    text = re.sub(r'(?<!\.)\.(?!\.)', ' ', text)
+    text = re.sub(r'([!?]+)', r' \1 ', text)
+    
+    # Tách từ
+    text = ViTokenizer.tokenize(text.strip())
+    return text
 
-# --- TỪ ĐIỂN CẤU HÌNH FILE MODEL ---
-# Bạn cần đặt tên file trong thư mục demo/artifacts/ đúng như dưới đây
-MODEL_FILES = {
-    "SVM": "svm_model.pkl",
-    "Naive Bayes": "naive_bayes_model.pkl",
-    "Logistic Regression": "logreg_model.pkl",
-    # PhoBERT thường lưu dạng folder hoặc file .pt, ở đây demo giả lập hoặc load path riêng
-    "PhoBERT": "phobert_model" 
+# --- 3. LOAD MODEL ---
+ARTIFACTS_DIR = os.path.join(current_dir, "artifacts")
+MODEL_CONFIG = {
+    "SVM": "svm.pkl",
+    "Naive Bayes": "naive_bayes.pkl",
+    "Logistic Regression": "logreg.pkl",
+    "PhoBERT": "phobert_final"
 }
 
-# --- 1. LOAD MODEL ---
 @st.cache_resource
 def load_model(model_name):
-    """
-    Load model dựa trên tên được chọn từ Sidebar.
-    """
-    artifacts_dir = os.path.join(current_dir, "artifacts")
-    model = None
-    
-    # Nhóm mô hình Thống kê (dùng joblib load file .pkl)
+    model, tokenizer = None, None
+    path = os.path.join(ARTIFACTS_DIR, MODEL_CONFIG[model_name])
+
     if model_name in ["SVM", "Naive Bayes", "Logistic Regression"]:
-        file_name = MODEL_FILES[model_name]
-        model_path = os.path.join(artifacts_dir, file_name)
-        
-        if os.path.exists(model_path):
+        if os.path.exists(path):
             try:
-                model = joblib.load(model_path)
+                model = joblib.load(path)
             except Exception as e:
-                st.error(f"Lỗi khi load {model_name}: {e}")
+                st.error(f"❌ Lỗi file {model_name}: {e}")
         else:
-            # Nếu chưa có file, trả về None để chạy chế độ giả lập cho đỡ lỗi
-            pass
+            st.error(f"❌ Thiếu file: {path}")
 
-    # Nhóm mô hình Deep Learning
     elif model_name == "PhoBERT":
-        # Load PhoBERT ở đây (yêu cầu torch, transformers)
-        # Vì demo đồ án gấp, nếu chưa đóng gói được PhoBERT, ta sẽ để None để chạy giả lập
-        pass
-        
-    return model
+        if os.path.exists(path):
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(path)
+                model = AutoModelForSequenceClassification.from_pretrained(path, num_labels=3)
+                model.to("cpu")
+                model.eval()
+            except Exception as e:
+                st.error(f"❌ Lỗi load PhoBERT: {e}")
+        else:
+            st.error(f"❌ Không tìm thấy thư mục: {path}")
+            
+    return model, tokenizer
 
-# --- 2. HÀM DỰ ĐOÁN (INFERENCE) ---
-def predict(model, text, model_name):
-    # 1. Tiền xử lý
-    mode = 'deep_learning' if model_name == "PhoBERT" else 'statistical'
-    processed_text = clean_text(text, mode=mode)
+# --- 4. HÀM DỰ ĐOÁN ---
+def predict(model_obj, tokenizer_obj, text, model_name):
+    mode = 'deep_learning' if model_name == 'PhoBERT' else 'statistical'
+    clean_txt = local_clean_text(text, mode=mode)
     
-    label = 0
-    confidence = 0.0
+    label, confidence = 0, 0.0
     
-    # CASE A: CÓ MODEL THỰC TẾ (Đã load được file .pkl)
-    if model is not None and model_name != "PhoBERT":
+    if model_name == "PhoBERT":
+        if model_obj is None: return 0, 0.0
+        inputs = tokenizer_obj(clean_txt, return_tensors="pt", truncation=True, padding=True, max_length=128)
+        with torch.no_grad():
+            outputs = model_obj(**inputs)
+            probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
+        probs_np = probs.numpy()[0]
+        label = np.argmax(probs_np)
+        confidence = probs_np[label]
+    else:
+        if model_obj is None: return 0, 0.0
         try:
-            # Các model Sklearn (SVM, NB, LR) đều có hàm predict_proba
-            # Input phải là list hoặc array, ví dụ: [processed_text]
-            # Lưu ý: Model lưu phải là Pipeline (bao gồm cả TfidfVectorizer)
-            proba = model.predict_proba([processed_text])[0]
+            proba = model_obj.predict_proba([clean_txt])[0]
             label = np.argmax(proba)
             confidence = proba[label]
-        except Exception as e:
-            st.error(f"Lỗi format model: {e}. Đảm bảo bạn đã save cả Pipeline (Tfidf + Model).")
-            # Fallback random nếu lỗi
-            label = random.choice([0, 1, 2])
-            confidence = 0.5
-
-    # CASE B: PHOBERT HOẶC CHƯA CÓ FILE MODEL (CHẠY GIẢ LẬP DEMO)
-    else:
-        # --- LOGIC MOCKUP (Để thầy cô thấy UI chạy mượt) ---
-        # Logic đơn giản dựa trên từ khóa để demo đúng ngữ nghĩa
-        text_lower = text.lower()
-        if any(w in text_lower for w in ["béo", "heo", "lợn", "xấu", "mặt mâm", "tởm"]):
-            label = 2
-            confidence = random.uniform(0.85, 0.99)
-        elif any(w in text_lower for w in ["hệ tâm linh", "lạ lắm", "ảo", "gương", "màn hình phẳng"]):
-            label = 1
-            confidence = random.uniform(0.70, 0.85)
-        else:
-            label = 0
-            confidence = random.uniform(0.80, 0.95)
+        except:
+            label = model_obj.predict([clean_txt])[0]
+            confidence = 1.0
             
     return label, confidence
 
-# --- 3. GIAO DIỆN CHÍNH ---
+# --- 5. GIAO DIỆN CHÍNH (Clean Version) ---
 def main():
-    # --- Sidebar ---
-    st.sidebar.title("⚙️ Cấu hình Mô hình")
+    # Sidebar
+    st.sidebar.header("⚙️ Cấu hình Model")
+    model_option = st.sidebar.selectbox("Chọn Thuật toán:", list(MODEL_CONFIG.keys()))
     
-    model_option = st.sidebar.selectbox(
-        "Chọn Thuật toán:",
-        ["SVM", "Naive Bayes", "Logistic Regression", "PhoBERT"]
-    )
-    
-    # Thông tin mô hình cập nhật theo lựa chọn
-    info_dict = {
-        "SVM": "Support Vector Machine: Tìm siêu phẳng tối ưu để phân tách các lớp dữ liệu. Ổn định với dữ liệu ít.",
-        "Naive Bayes": "Dựa trên định lý Bayes với giả định các đặc trưng độc lập. Rất nhanh, phù hợp làm baseline.",
-        "Logistic Regression": "Mô hình hồi quy tuyến tính dùng hàm Sigmoid/Softmax để phân loại. Dễ diễn giải.",
-        "PhoBERT": "Pre-trained Transformer cho tiếng Việt. Hiểu ngữ cảnh sâu nhưng tốn tài nguyên tính toán."
-    }
-    st.sidebar.info(f"ℹ️ **{model_option}**: {info_dict.get(model_option)}")
-    
-    # Load model
-    model = load_model(model_option)
-    
-    if model is None and model_option != "PhoBERT":
-        st.sidebar.warning(f"⚠️ Chưa tìm thấy file `{MODEL_FILES.get(model_option)}`. Đang chạy chế độ Demo.")
-    elif model_option == "PhoBERT":
-        st.sidebar.warning("⚠️ PhoBERT đang chạy chế độ Demo (Mockup) để tối ưu tốc độ.")
+    with st.spinner(f"Đang khởi động {model_option}..."):
+        model, tokenizer = load_model(model_option)
+    if model: st.sidebar.success(f"✅ Đã load {model_option}")
 
-    # --- Main Interface ---
+    # Main UI
     st.title("🛡️ Demo Body Shaming Detection")
-    st.write("Phân loại bình luận tiếng Việt dựa trên Học máy thống kê & Deep Learning.")
     st.markdown("---")
-    
-    text_input = st.text_area("📝 Nhập bình luận:", height=100, placeholder="Ví dụ: Chị này béo mà nhìn duyên ghê...")
-    
-    if st.button("🔍 Phân tích", type="primary"):
+
+    # Chỉ còn ô nhập liệu đơn giản
+    text_input = st.text_area(
+        "📝 Nhập bình luận cần kiểm tra:", 
+        height=100, 
+        placeholder="Ví dụ: Bạn này nhìn cũng có da có thịt ghê..."
+    )
+
+    # Button Phân tích
+    if st.button("🔍 Phân tích ngay", type="primary"):
         if not text_input.strip():
             st.warning("Vui lòng nhập nội dung!")
         else:
-            with st.spinner(f'Đang xử lý bằng {model_option}...'):
-                pred_label, conf_score = predict(model, text_input, model_option)
+            with st.spinner("AI đang phân tích..."):
+                pred_label, conf = predict(model, tokenizer, text_input, model_option)
                 
-                # Hiển thị kết quả
-                labels = {
-                    0: ("KHÔNG XÚC PHẠM", "success", "Bình luận an toàn."),
-                    1: ("MỈA MAI / ẨN Ý", "warning", "Có dấu hiệu châm biếm gián tiếp."),
-                    2: ("XÚC PHẠM", "error", "Ngôn từ tấn công trực diện.")
+                result_map = {
+                    0: ("KHÔNG XÚC PHẠM", "success", "✅"),
+                    1: ("MỈA MAI", "warning", "⚠️"),
+                    2: ("XÚC PHẠM", "error", "🚫")
                 }
+                txt, color, icon = result_map.get(pred_label)
                 
-                lbl_text, color, desc = labels[pred_label]
+                st.markdown(f"### Kết quả:")
+                if color == "success": st.success(f"{icon} {txt}")
+                elif color == "warning": st.warning(f"{icon} {txt}")
+                else: st.error(f"{icon} {txt}")
                 
-                st.markdown("### 📊 Kết quả:")
-                if color == "success": st.success(f"{lbl_text}")
-                elif color == "warning": st.warning(f"{lbl_text}")
-                else: st.error(f"{lbl_text}")
-                
-                st.caption(desc)
-                
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.progress(conf_score)
-                with col2:
-                    st.write(f"**{conf_score*100:.1f}%**")
+                st.progress(float(conf), text=f"Độ tin cậy: {conf*100:.2f}%")
 
 if __name__ == "__main__":
     main()
