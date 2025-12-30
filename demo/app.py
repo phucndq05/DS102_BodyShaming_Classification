@@ -126,7 +126,7 @@ def main():
     text_input = st.text_area(
         "📝 Nhập bình luận cần kiểm tra:", 
         height=100, 
-        placeholder="Ví dụ: Bạn này nhìn cũng có da có thịt ghê..."
+        placeholder="Ví dụ: Bạn này nhìn đẹp quá"
     )
 
     # Button Phân tích
