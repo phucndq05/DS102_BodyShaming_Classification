@@ -16,6 +16,9 @@ import os
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, '..', 'data')
+
 class DataPreprocessor:
     def __init__(self, mode='baseline', stopwords_path=None, teencode_path=None):
         """
@@ -65,8 +68,21 @@ class DataPreprocessor:
             self.teencode_pattern = None
 
     def clean_text(self, text):
-        """Bước 1: Basic Cleaning & Formatting"""
-        if not isinstance(text, str): return ""
+        """
+        Bước 1: Basic Cleaning & Formatting
+        Mục tiêu: Làm sạch nhiễu bề mặt trước khi chuẩn hóa sâu.
+        Bao gồm:
+        - Chuyển toàn bộ văn bản về chữ thường (lowercase)
+        - Loại bỏ HTML tags
+        - Loại bỏ URL / Link
+        - Loại bỏ Mentions (@user) theo regex ASCII (tránh ảnh hưởng tiếng Việt)
+        - Loại bỏ Hashtag (#topic)
+        - Chuẩn hóa ký tự xuống dòng, tab về khoảng trắng
+        - Chuẩn hóa khoảng trắng dư thừa
+        """
+        
+        if not isinstance(text, str): 
+            return ""
         
         # 1. Chuyển về chữ thường
         text = text.lower()
@@ -77,56 +93,64 @@ class DataPreprocessor:
         # 3. Xóa URL/Link
         text = re.sub(r'http\S+|www\.\S+', '', text)
         
-        # [CẬP NHẬT]: Xóa Mentions (@user) theo regex chuẩn ASCII để tránh dính chữ Việt
-        # Regex cũ: r'@\w+' -> Regex mới: r'@[a-zA-Z0-9_.]+'
+        # 4. Xóa Mentions (@user) – dùng regex ASCII để không dính chữ Việt
         text = re.sub(r'@[a-zA-Z0-9_.]+', '', text)
         
-        # [BỔ SUNG]: Xóa Hashtag (#trend)
+        # 5. Xóa Hashtag (#trend)
         text = re.sub(r'#\S+', '', text)
         
-        # [CẬP NHẬT]: Xóa ký tự xuống dòng, tab thành khoảng trắng
+        # 6. Chuẩn hóa newline, tab về khoảng trắng
         text = re.sub(r'[\n\t]', ' ', text)
         
-        # Xóa khoảng trắng thừa
+        # 7. Xóa khoảng trắng dư thừa
         text = re.sub(r'\s+', ' ', text).strip()
         
         return text
 
     def handle_emoji(self, text):
         """
-        [CẬP NHẬT] Bước 4: Emoji Handling (Dùng thư viện tiếng Anh)
-        """
+        BƯỚC 4: EMOJI HANDLING
+        Mục tiêu: Chuyển emoji sang dạng text để mô hình học được cảm xúc.
+        Cách làm:
+        - Sử dụng thư viện emoji.demojize
+        - Chuyển 😭 → loudly crying face
+        - Thay dấu : và _ thành khoảng trắng để tách từ"""
+        
         # demojize: chuyển 😭 -> :loudly_crying_face:
-        # delimiters=(' ', ' '): thêm khoảng trắng 2 bên ->  loudly_crying_face 
         text = emoji.demojize(text, delimiters=(' ', ' '))
         
-        # Thay thế dấu : và _ thành khoảng trắng để tách hẳn ra thành từ đơn
-        # VD: :loudly_crying_face: -> loudly crying face
+        # loudly_crying_face: -> loudly crying face
         text = text.replace(':', '').replace('_', ' ')
         
         return text
 
     def normalize(self, text):
         """
-        Bước 2, 3, 5, 6: Chuẩn hóa Unicode, Spam char, Teencode, Dấu câu
+        BƯỚC 2 → 6 : NORMALIZATION PIPELINE
+        Bao gồm:
+        - Bước 2: Chuẩn hóa Unicode (NFC)
+        - Bước 3: Chuẩn hóa ký tự lặp (spam characters)
+        - Bước 4: Xử lý Emoji
+        - Bước 5: Chuẩn hóa Teencode / Slang
+        - Bước 6: Lọc & chuẩn hóa dấu câu
         """
         # Bước 2: Chuẩn hóa Unicode (NFC)
         text = unicodedata.normalize('NFC', text)
         
-        # Bước 4: Xử lý Emoji bằng thư viện
+        # Bước 4: Xử lý Emoji 
         text = self.handle_emoji(text)
         
         # Xử lí riêng cho từ "kg": 'kilogram' hoặc là 'không'
-        # Case A: kg là KILOGRAM (nếu đứng sau con số). VD: 5kg -> 5 kilogram
+        # Case A: Đơn vị đo (5kg → 5 kilogram)
         text = re.sub(r'(\d+)\s*kg\b', r'\1 kilogram', text)
-        # Case B: kg là KHÔNG (các trường hợp còn lại). VD: "nhìn kg đẹp" -> "nhìn không đẹp
+        # Case B: Nghĩa phủ định (kg → không)
         text = re.sub(r'\bkg\b', 'không', text)
 
         # Bước 5: Map Teencode (Từ file CSV đã load)
         if self.teencode_pattern:
             text = self.teencode_pattern.sub(lambda x: self.teencode_dict[x.group()], text)
         
-        #Bước 3: Spam Character Handling
+        # Bước 3: Spam Character Handling
         # Rút gọn ký tự lặp > 2 lần về 1 ký tự gốc (VD: đẹpppp -> đẹp)
         text = re.sub(r'(.)\1{2,}', r'\1', text)
         
@@ -149,7 +173,11 @@ class DataPreprocessor:
         return re.sub(r'\s+', ' ', text).strip()
 
     def remove_stopwords(self, text):
-        """[BỔ SUNG] Bước 8: Stopwords Removal"""
+        """
+        BƯỚC 8 – STOPWORDS REMOVAL
+        Áp dụng cho mô hình Statistical (TF-IDF, ML truyền thống).
+        Không áp dụng cho Deep Learning để giữ ngữ cảnh.
+        """
         if not self.stopwords:
             return text
         
@@ -160,9 +188,18 @@ class DataPreprocessor:
 
 
     def process(self, text, target_model='statistical'):
-        """Main Pipeline (Nhiệm vụ 1)"""
-        text = self.clean_text(text)  # Bước 1
-        text = self.normalize(text)   # Bước 2, 3, 4, 5, 6
+        """
+        MAIN PREPROCESSING PIPELINE (NHIỆM VỤ 1)
+        Luồng xử lý chuẩn:
+        - Bước 1: Basic Cleaning
+        - Bước 2–6: Normalization
+        - Bước 7: Word Segmentation (ViTokenizer)
+        - Bước 8: Stopwords Removal (chỉ cho Statistical Model)
+        """
+        # Bước 1
+        text = self.clean_text(text) 
+        # Bước 2-6 
+        text = self.normalize(text)   
         
         # Bước 7: Tách từ (bắt buộc cho cả 2 mode)
         text = ViTokenizer.tokenize(text)
@@ -181,24 +218,24 @@ class DataPreprocessor:
 if __name__ == "__main__":
     # 1. Khởi tạo
     preprocessor = DataPreprocessor(
-        stopwords_path='../data/dictionaries/vietnamese_stopwords.txt',
-        teencode_path='../data/dictionaries/teencode.csv'
+        stopwords_path=os.path.join(DATA_DIR, 'dictionaries', 'vietnamese_stopwords.txt'),
+        teencode_path=os.path.join(DATA_DIR, 'dictionaries', 'teencode.csv')
     )
     
     # 2. Đọc dữ liệu thô
-    input_file = '../data/processed/dummy_data.csv' 
+    input_file = os.path.join(DATA_DIR, 'raw', 'dataset_raw.csv') 
     if os.path.exists(input_file):
         df = pd.read_csv(input_file)
         df.rename(columns={'comment_text': 'text', 'comment_id': 'id'}, inplace=True)
         
         # 3. Chạy 2 lần Pipeline cho 2 Mode
         modes = ['statistical', 'deep_learning']
+        tqdm.pandas(desc="Tiền xử lý dữ liệu")
         for mode in modes:
             print(f"\n Đang xử lý cho chế độ: {mode}")
             temp_df = df.copy()
             
             # Tiền xử lý text theo mode
-            tqdm.pandas()
             temp_df['text'] = temp_df['text'].progress_apply(lambda x: preprocessor.process(x, target_model=mode))
             
             # Map nhãn từ chữ sang số
@@ -232,7 +269,7 @@ if __name__ == "__main__":
 
             # Xuất file (Nhiệm vụ 2 - Đủ 6 file)
             suffix = 'stat' if mode == 'statistical' else 'dl'
-            processed_dir = '../data/processed'
+            processed_dir = os.path.join(DATA_DIR, 'processed')
             os.makedirs(processed_dir, exist_ok=True)
             
             train[output_cols].to_csv(f'{processed_dir}/train_{suffix}.csv', index=False)
