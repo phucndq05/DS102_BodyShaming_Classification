@@ -155,11 +155,33 @@ class PhoBERTClassifier:
 # ==========================================
 # PHẦN 3: BASELINE MODEL (SVM, NB, LogReg)
 # ==========================================
+import os
+import joblib
+from typing import Dict, Any
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+
+import os
+import joblib
+from typing import Dict, Any
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.svm import SVC
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 
 class BaselineModel:
     """
-    Class mô hình học máy thống kê cơ bản.
+    Class mô hình học máy thống kê cơ bản: SVM, Naive Bayes, Logistic Regression.
     Sử dụng Scikit-learn Pipeline (TfidfVectorizer + Classifier).
+    Tuning tham số bằng GridSearchCV.
     """
     
     def __init__(self, model_type: str = 'svm'):
@@ -183,14 +205,43 @@ class BaselineModel:
         self.pipeline = Pipeline([('tfidf', tfidf), ('clf', clf)])
         return self.pipeline
     
-    def train(self, X_train, y_train, **kwargs) -> None: # Thêm **kwargs để hứng các tham số thừa từ train.py
+    def train(self, X_train, y_train, **kwargs) -> None:
+        """
+        Huấn luyện mô hình với chế độ tự động Tuning (Macro-F1).
+        """
         if self.pipeline is None: self.build_pipeline()
-        print(f"-> [Baseline] Đang huấn luyện mô hình: {self.model_type}...")
-        self.pipeline.fit(X_train, y_train)
+        
+        print(f"\n[Baseline] Đang Tuning & Training ({self.model_type})")
+        
+        # Định nghĩa tham số
+        param_grid = {}
+        if self.model_type == 'naive_bayes':
+            param_grid = {'clf__alpha': [0.1, 0.5, 1.0, 2.0]}
+        elif self.model_type == 'svm':
+            param_grid = {'clf__C': [0.1, 1, 10]}
+        elif self.model_type == 'logreg':
+            param_grid = {'clf__C': [0.1, 1, 10, 100]}
+
+        # Chạy GridSearch
+        grid = GridSearchCV(
+            self.pipeline, 
+            param_grid, 
+            cv=3, 
+            scoring='f1_macro', 
+            n_jobs=-1, 
+            verbose=1
+        )
+        
+        grid.fit(X_train, y_train)
+        
+        # Lưu kết quả tốt nhất
+        print(f"Best Params: {grid.best_params_}")
+        print(f"Best CV Macro F1: {grid.best_score_:.4f}")
+        
+        self.pipeline = grid.best_estimator_
         print("-> [Baseline] Huấn luyện hoàn tất.")
         
     def evaluate(self, X_test, y_test) -> Dict[str, Any]:
-        if self.pipeline is None: raise Exception("Mô hình chưa được huấn luyện!")
         y_pred = self.pipeline.predict(X_test)
         
         print(f"\n--- Báo cáo Đánh giá ({self.model_type}) ---")
@@ -209,4 +260,8 @@ class BaselineModel:
         if directory and not os.path.exists(directory):
             os.makedirs(directory, exist_ok=True)
         joblib.dump(self.pipeline, model_path)
-        print(f"💾 [Baseline] Đã lưu model tại: {model_path}")
+        print(f"[Baseline] Đã lưu model tại: {model_path}")
+
+    def load(self, model_path: str) -> None:
+        self.pipeline = joblib.load(model_path)
+        print(f"[Baseline] Đã load model từ: {model_path}")
